@@ -1,0 +1,18 @@
+Package: EVBLM
+Type: Package
+Title: Empirical Variational Bayes for Longitudinal Matrix Factorization
+Version: 0.0.1
+Authors@R: person("EVBLM", "authors", role = c("aut", "cre"),
+    email = "maintainer@example.org")
+Description: Fits longitudinal matrix factorization models with aligned or
+    irregular observation times using empirical variational Bayes. Supports
+    exchangeable and radial basis covariance models, an unrestricted aligned
+    covariance model, greedy factor selection, backfitting, and imputation.
+    Numerical fitting is implemented in C++ with R interfaces for validation
+    and formatting.
+License: GPL-3
+Encoding: UTF-8
+Imports: Rcpp
+LinkingTo: Rcpp, RcppArmadillo
+SystemRequirements: C++17
+NeedsCompilation: yes

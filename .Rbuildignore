@@ -1,0 +1,5 @@
+^benchmarks$
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.git$
+^\.gitignore$

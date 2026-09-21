@@ -1,0 +1,6 @@
+useDynLib(EVBLM, .registration = TRUE)
+importFrom(Rcpp, evalCpp)
+export(evblm)
+export(evblm_impute)
+export(mvEBNM)
+export(irrEBNM)
