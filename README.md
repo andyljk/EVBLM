@@ -51,13 +51,18 @@ optimizer starts and tolerances, and completed-data imputation objective.
 Comparisons use numerical tolerances because operation ordering and eigensolvers
 can change rounding and the selected start among numerically tied optima.
 
-Several original conventions are retained explicitly:
+The following fitting conventions apply:
 
 - Aligned fits can run `max_iter + 1` sweeps; irregular fits can run `max_iter`.
-- Aligned imputation stops on the sum of squared changes at missing entries;
-  irregular imputation uses the mean squared change across all entries.
+- Aligned and irregular imputation stop on the sum of squared changes at missing
+  entries, following Algorithm 4. This corrects the irregular R stopping rule.
 - The initial ELBO is negative infinity until all point-mass initial factors update.
 - Irregular single-factor and greedy fitting retain their progress printing.
+
+Aligned noise initialization uses data energy when SVD residuals are at roundoff;
+the first noise update waits until all factors have posterior moments. Both data
+layouts remove null factors using the loading criterion alone. Covariance
+eigendecomposition failures raise an explicit error.
 
 Malformed inputs and all-zero or wholly missing data are rejected by the R interface.
 Greedy selection is bounded by its existing factor-storage capacity; the original

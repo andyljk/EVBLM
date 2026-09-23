@@ -51,8 +51,14 @@ evblm = function(X, D, R = NULL, fn = "EC",
       !is.logical(null_check) || length(null_check) != 1L || is.na(null_check)) {
     stop("impute, verbose, and null_check must each be TRUE or FALSE.")
   }
-  if (any(is.infinite(packed)) || (!impute && anyNA(packed))) {
-    stop("X must be finite; missing values are allowed only when impute = TRUE.")
+  if (any(is.infinite(packed))) {
+    stop("X must not contain infinite values.")
+  }
+  if (!impute && anyNA(packed)) {
+    stop("X contains missing values. Use evblm_impute().")
+  }
+  if (impute && !anyNA(packed)) {
+    stop("X contains no missing values. Use evblm() with impute = FALSE.")
   }
   if (all(is.na(packed) | packed == 0)) {
     stop("X must contain a nonzero observed entry to initialize noise precision.")

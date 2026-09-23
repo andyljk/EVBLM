@@ -23,7 +23,9 @@ evblm_impute(X, D, R = NULL, fn = "EC",
 \arguments{
   \item{X}{Aligned data: a numeric array with dimensions variables by subjects
   by visits. Irregular data: a list of numeric variables by visits matrices,
-  one per subject. Missing entries require \code{impute = TRUE}.}
+  one per subject. Use \code{evblm()} for complete data and \code{evblm_impute()}
+  for data with missing entries. A mismatch stops with a message directing the
+  user to the appropriate function.}
   \item{D}{Aligned data: a finite numeric time vector. Irregular data: one
   finite numeric time vector per subject. Repeated visit times are allowed.}
   \item{R}{Nonnegative number of factors for \code{method = "backfit"}; zero
@@ -35,15 +37,18 @@ evblm_impute(X, D, R = NULL, fn = "EC",
   \code{"greedy+backfit"}. Imputation supports the latter combined method
   and \code{"backfit"}.}
   \item{impute}{Whether to iteratively replace missing entries with fitted
-  signal values. \code{evblm_impute()} sets this to \code{TRUE}.}
-  \item{thres}{Nonnegative convergence threshold for changes in the fitted signal.}
+  signal values. \code{evblm_impute()} sets this to \code{TRUE}.
+  Imputation requires at least one missing entry.}
+  \item{thres}{Nonnegative convergence threshold for changes in the fitted signal.
+  Imputation uses the sum of squared changes at missing entries, as in Algorithm 4;
+  complete-data fitting uses the mean squared change over all entries.}
   \item{max_iter}{Nonnegative iteration limit. The aligned implementation
   preserves its inclusive iteration condition and can perform
   \code{max_iter + 1} sweeps. Greedy factor proposals retain the original
   single-factor iteration limit.}
   \item{verbose}{Whether to print iteration diagnostics.}
-  \item{null_check}{Whether to remove factors meeting the original
-  implementation's null-factor criteria.}
+  \item{null_check}{Whether to remove factors whose loading posterior means
+  have an absolute column sum below \code{1e-8}.}
   \item{u_mt, v_mt}{Optional initial factor lists from a compatible fit.
   Supply both for non-imputing backfitting. Their \code{pos} fields store
   posterior means and second moments in the shapes described below.
@@ -58,8 +63,10 @@ The aligned exchangeable model allows negative correlations within its
 positive-semidefinite parameter space. The irregular exchangeable model has
 nonnegative independent and random-intercept variance components.
 
-The numerical implementation preserves the original initialization method,
-update order, covariance optimizer settings, and stopping conditions.
+The numerical implementation uses SVD initialization, with finite noise
+initialization for exactly fitted aligned data before posterior moments are
+available. It preserves the original update order and covariance optimizer
+settings. Imputation uses the manuscript's missing-entry stopping criterion.
 Residuals and objective summaries are maintained incrementally. Covariance
 geometry is reused, and subjects with identical irregular time-distance
 matrices share covariance decompositions. Numerical results can differ at

@@ -1,6 +1,7 @@
 #include "helper.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace evblm {
 namespace {
@@ -50,6 +51,16 @@ Fit iterate(WorkingData data, Factors factors, const std::string& prior,
   ResidualCache cache = initialize_residual(data, f);
   fit.signal = data.X - cache.residual;
   fit.tau.ones(data.group_size.n_elem);
+  if (data.aligned && (f.u_count != f.rank || f.v_count != f.rank)) {
+    // Point-mass SVD factors have no posterior uncertainty yet. An exact fit
+    // can leave RSS at roundoff (including negative values); initialize those
+    // noise groups from data energy until the first posterior sweep completes.
+    const double energy = arma::accu(arma::square(data.X));
+    for (arma::uword j = 0; j < fit.tau.n_elem; ++j) {
+      fit.tau[j] = cache.rss[j] > 64 * std::numeric_limits<double>::epsilon() * energy ?
+        data.X.n_rows * data.group_size[j] / cache.rss[j] : data.X.n_elem / energy;
+    }
+  }
   if (!data.aligned) {
     double rss = f.u_count == f.rank && f.v_count == f.rank ?
       cache.rss[0] : arma::accu(arma::square(data.X));
@@ -68,7 +79,7 @@ Fit iterate(WorkingData data, Factors factors, const std::string& prior,
     arma::mat previous_signal = fit.signal;
     int iteration = fit.iterations + 1;
     for (arma::uword j = 0; j < fit.tau.n_elem; ++j) {
-      if (data.aligned || (f.u_count == f.rank && f.v_count == f.rank))
+      if (f.u_count == f.rank && f.v_count == f.rank)
         fit.tau[j] = data.X.n_rows * data.group_size[j] / cache.rss[j];
       fit.trace.append(iteration, "noise", data.aligned ? j + 1 : NA_INTEGER,
                        evidence_lower_bound(data, f, cache, fit.tau));
@@ -138,8 +149,8 @@ Fit iterate(WorkingData data, Factors factors, const std::string& prior,
     }
     fit.elbo.push_back(evidence_lower_bound(data, f, cache, fit.tau));
     arma::mat difference = fit.signal - previous_signal;
-    // Preserve the original aligned imputation sum-of-squares stopping rule.
-    change = impute && data.aligned ? arma::accu(arma::square(difference.elem(data.missing))) :
+    // Algorithm 4 stops on the sum of squared changes at missing entries.
+    change = impute ? arma::accu(arma::square(difference.elem(data.missing))) :
       arma::accu(arma::square(difference)) / difference.n_elem;
     ++fit.iterations;
     if (verbose || (single && !data.aligned)) Rprintf("[1] %.7g\n", change);
@@ -202,18 +213,10 @@ Fit greedy(const WorkingData& data, const std::string& prior, double threshold) 
 
 void remove_null_factors(const WorkingData& data, Factors& f) {
   std::vector<arma::uword> keep;
-  bool score_null = !data.aligned;
   for (arma::uword k = 0; k < f.rank; ++k) {
     if (arma::accu(arma::abs(f.U.col(k))) >= 1e-8) keep.push_back(k);
-    if (data.aligned) {
-      for (arma::uword m = 0; m < data.visits; ++m) {
-        double total = 0;
-        for (arma::uword i = 0; i < data.subjects; ++i) total += std::abs(f.V(i * data.visits + m, k));
-        if (total < 1e-8) score_null = true;
-      }
-    }
   }
-  if (!score_null || keep.size() == f.rank) return;
+  if (keep.size() == f.rank) return;
   Factors reduced = empty_factors(data.X.n_rows, data.X.n_cols, keep.size());
   reduced.rank = keep.size();
   reduced.diagnostics = f.diagnostics;

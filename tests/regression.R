@@ -95,3 +95,17 @@ invalid_calls = list(
 for (call in invalid_calls) {
   stopifnot(inherits(tryCatch(eval(call), error = identity), "error"))
 }
+
+# Wrong fitting modes must direct both data layouts to the appropriate function,
+# rather than returning an unfitted initialization for complete-data imputation.
+for (variant in c("aligned", "irregular")) {
+  times = get(paste0(variant, "_times"))
+  incomplete = get(paste0(variant, "_missing"))
+  complete = get(paste0(variant, "_data"))
+  failure = tryCatch(evblm(incomplete, times, R = 2), error = identity)
+  stopifnot(inherits(failure, "error"),
+    grepl("Use evblm_impute()", conditionMessage(failure), fixed = TRUE))
+  failure = tryCatch(evblm_impute(complete, times, R = 2), error = identity)
+  stopifnot(inherits(failure, "error"),
+    grepl("Use evblm() with impute = FALSE", conditionMessage(failure), fixed = TRUE))
+}

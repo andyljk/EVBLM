@@ -141,7 +141,8 @@ PriorResult fit_aligned(const arma::mat& X, const arma::vec& s,
     whitened_covariance.each_row() /= s.t();
     arma::vec eigenvalues;
     arma::mat eigenvectors;
-    arma::eig_sym(eigenvalues, eigenvectors, whitened_covariance);
+    if (!arma::eig_sym(eigenvalues, eigenvectors, whitened_covariance))
+      Rcpp::stop("Aligned Free covariance eigendecomposition failed.");
     eigenvalues = arma::clamp(eigenvalues - 1, 0, arma::datum::inf);
     V = (eigenvectors.each_row() % eigenvalues.t()) * eigenvectors.t();
     V.each_col() %= s;
@@ -177,7 +178,8 @@ PriorResult fit_aligned(const arma::mat& X, const arma::vec& s,
         H.each_row() /= scaled_s.t();
         arma::vec eigenvalues;
         arma::mat eigenvectors;
-        arma::eig_sym(eigenvalues, eigenvectors, H);
+        if (!arma::eig_sym(eigenvalues, eigenvectors, H))
+          Rcpp::stop("Aligned RBF objective eigendecomposition failed.");
         eigenvalues = arma::clamp(eigenvalues, 0, arma::datum::inf);
         if (arma::all(arma::vectorise(correlation) == 1) && d > 1) {
           eigenvalues.head(d - 1).zeros();
@@ -293,7 +295,8 @@ PriorResult fit_aligned(const arma::mat& X, const arma::vec& s,
   standardized_prior.each_row() /= s.t();
   arma::vec lambda;
   arma::mat eigenvectors;
-  arma::eig_sym(lambda, eigenvectors, standardized_prior);
+  if (!arma::eig_sym(lambda, eigenvectors, standardized_prior))
+    Rcpp::stop("Aligned posterior covariance eigendecomposition failed.");
   lambda = arma::clamp(lambda, 0, arma::datum::inf);
   if (arma::all(arma::vectorise(V) == V[0]) && d > 1) lambda.head(d - 1).zeros();
   const arma::vec shrink = lambda / (1 + lambda);

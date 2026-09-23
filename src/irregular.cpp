@@ -56,7 +56,8 @@ class IrregularRbfObjective {
       rbf_kernel(geometry, g, par[1], correlation, &derivative);
       arma::vec eigenvalues;
       arma::mat vectors;
-      arma::eig_sym(eigenvalues, vectors, correlation);
+      if (!arma::eig_sym(eigenvalues, vectors, correlation))
+        Rcpp::stop("Irregular RBF objective eigendecomposition failed.");
       eigenvalues = arma::reverse(eigenvalues);
       vectors = arma::fliplr(vectors);
       arma::vec h = arma::clamp(eigenvalues, 0, arma::datum::inf) / noise;
@@ -314,7 +315,8 @@ PriorResult fit_irregular(const std::vector<arma::vec>& observations, double s,
         covariance *= variance;
       }
       arma::vec eigenvalues;
-      arma::eig_sym(eigenvalues, vectors[g], covariance);
+      if (!arma::eig_sym(eigenvalues, vectors[g], covariance))
+        Rcpp::stop("Irregular posterior covariance eigendecomposition failed.");
       eigenvalues = arma::reverse(eigenvalues);
       vectors[g] = arma::fliplr(vectors[g]);
       lambda[g] = arma::clamp(eigenvalues, 0, arma::datum::inf) / (s * s);
