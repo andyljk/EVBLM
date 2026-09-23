@@ -33,21 +33,26 @@ See `?evblm` and `?mvEBNM` for arguments and returned moment arrays.
 - `src/aligned.cpp`: aligned EC, Free, and RBF covariance estimation.
 - `src/irregular.cpp`: irregular EC and RBF covariance estimation and conditioning.
 - `src/helper.cpp` and `src/helper.h`: shared optimizer, time geometry, RBF kernel,
-  Gaussian loading update, dense SVD initialization, residual buffers, and ELBO summaries.
+  Gaussian loading update, SVD initialization, residual buffers, and ELBO summaries.
 - `src/bindings.cpp`: covariance entry points exposed to R.
 - `R/evblm.R`: validation and conversion between public arrays/lists and native matrices.
 - `tests/regression.R`: portable comparisons against fixtures from the original R code.
 
 All numerical fitting, including optimizer iterations, runs in C++. The optimizer
 is R's native L-BFGS-B routine, called directly without R function callbacks.
-Initialization still uses the dense divide-and-conquer SVD; no truncated or
-randomized initialization was introduced.
+Single-factor initialization (including greedy proposals) uses restarted Lanczos
+when both matrix dimensions are at least 128. It applies matrix-vector products
+without constructing a Gram matrix or a full SVD. Small matrices and multi-factor
+initializations retain dense divide-and-conquer SVD. The iterative solver checks
+convergence and singular-triplet residuals, and its local generator leaves R's RNG
+state unchanged. Signs and bases within tied leading singular subspaces can differ.
 
 ## Numerical compatibility
 
 The reference implementations are the two scripts in `CSDA_Submission` from
 September 2026. The port preserves their update order, prior boundaries, covariance
-optimizer starts and tolerances, and completed-data imputation objective.
+optimizer starts and tolerances. Imputation uses the Gaussian augmentation below
+instead of treating filled values as observed data.
 Comparisons use numerical tolerances because operation ordering and eigensolvers
 can change rounding and the selected start among numerically tied optima.
 
@@ -68,6 +73,24 @@ Malformed inputs and all-zero or wholly missing data are rejected by the R inter
 Greedy selection is bounded by its existing factor-storage capacity; the original
 aligned script could instead overrun that capacity. Empty dimensions are rejected,
 and zero-factor backfitting is supported.
+
+## Gaussian imputation and noise estimation
+
+Each missing value has an independent variational distribution
+`N(fitted mean, sigma²)`. Profiling its variance cancels its Gaussian normalizer
+against its entropy. If `RSS` includes squared residuals of the filled means and
+posterior signal variances over all entries, the bound is
+`-0.5 * sum(n_observed * log(2*pi*sigma²) + RSS/sigma²) - KL`.
+Thus each noise update is `sigma² = RSS / n_observed`. After updating the filled
+means, missing entries contribute only posterior signal uncertainty to `RSS`.
+Loading and score updates retain their existing form. This is a variational
+bound for the observed data; it is not the fully collapsed observed-data update
+that would also remove missing-entry signal uncertainty from factor updates.
+
+A completely unobserved aligned visit shares the observation-count-weighted mean
+noise variance of the observed visits. Those variances are optimized jointly to
+respect that constraint and the same bound. Entirely missing datasets remain
+invalid. The correction applies during greedy selection as well as backfitting.
 
 ## Local validation and timing
 

@@ -57,15 +57,21 @@ Fit iterate(WorkingData data, Factors factors, const std::string& prior,
     // noise groups from data energy until the first posterior sweep completes.
     const double energy = arma::accu(arma::square(data.X));
     for (arma::uword j = 0; j < fit.tau.n_elem; ++j) {
-      fit.tau[j] = cache.rss[j] > 64 * std::numeric_limits<double>::epsilon() * energy ?
-        data.X.n_rows * data.group_size[j] / cache.rss[j] : data.X.n_elem / energy;
+      fit.tau[j] = data.observed_count[j] > 0 &&
+        cache.rss[j] > 64 * std::numeric_limits<double>::epsilon() * energy ?
+        data.observed_count[j] / cache.rss[j] : arma::accu(data.observed_count) / energy;
     }
   }
   if (!data.aligned) {
     double rss = f.u_count == f.rank && f.v_count == f.rank ?
       cache.rss[0] : arma::accu(arma::square(data.X));
-    fit.tau[0] = data.X.n_elem / rss;
+    fit.tau[0] = data.observed_count[0] / rss;
   }
+  const arma::uvec observed_groups = arma::find(data.observed_count > 0);
+  const arma::uvec empty_groups = arma::find(data.observed_count == 0);
+  if (!empty_groups.is_empty()) fit.tau.elem(empty_groups).fill(
+    arma::accu(data.observed_count) / arma::accu(data.observed_count.elem(observed_groups) /
+      fit.tau.elem(observed_groups)));
   int limit = max_iter + (data.aligned ? 1 : 0);
   fit.elbo.reserve(limit);
   fit.trace.reserve(1 + static_cast<std::size_t>(limit) *
@@ -78,9 +84,11 @@ Fit iterate(WorkingData data, Factors factors, const std::string& prior,
     Rcpp::checkUserInterrupt();
     arma::mat previous_signal = fit.signal;
     int iteration = fit.iterations + 1;
+    if (!empty_groups.is_empty() && f.u_count == f.rank && f.v_count == f.rank)
+      fit.tau = pooled_noise_precision(data, cache, fit.tau);
     for (arma::uword j = 0; j < fit.tau.n_elem; ++j) {
-      if (f.u_count == f.rank && f.v_count == f.rank)
-        fit.tau[j] = data.X.n_rows * data.group_size[j] / cache.rss[j];
+      if (empty_groups.is_empty() && f.u_count == f.rank && f.v_count == f.rank)
+        fit.tau[j] = data.observed_count[j] / cache.rss[j];
       fit.trace.append(iteration, "noise", data.aligned ? j + 1 : NA_INTEGER,
                        evidence_lower_bound(data, f, cache, fit.tau));
     }
@@ -135,7 +143,7 @@ Fit iterate(WorkingData data, Factors factors, const std::string& prior,
     }
     fit.signal = data.X - cache.residual;
     if (impute) {
-      // The original objective uses completed data; missing values change only here.
+      // Update the means of q(Y_missing); its variances are profiled as 1/tau.
       for (arma::uword index : data.missing) {
         arma::uword column = index / data.X.n_rows;
         double squared = cache.residual[index] * cache.residual[index];
@@ -165,9 +173,14 @@ Fit greedy(const WorkingData& data, const std::string& prior, double threshold) 
   Factors& f = fit.factors;
   ResidualCache cache = initialize_residual(data, f);
   fit.signal.zeros(data.X.n_rows, data.X.n_cols);
-  fit.tau = data.X.n_rows * data.group_size / cache.rss;
+  fit.tau = data.observed_count / cache.rss;
+  if (arma::any(data.observed_count == 0)) {
+    fit.tau.fill(arma::accu(data.observed_count) / arma::accu(cache.rss));
+    fit.tau = pooled_noise_precision(data, cache, fit.tau);
+  }
   fit.elbo.reserve(capacity);
   while (f.rank < capacity) {
+    if (cache.residual.is_zero()) break;
     WorkingData residual_data = data;
     residual_data.X = cache.residual;
     residual_data.missing.reset();
@@ -307,6 +320,9 @@ Rcpp::List evblm_engine_cpp(const arma::mat& X, const Rcpp::List& D, bool aligne
     }
   }
   data.missing = arma::find_nonfinite(arma::vectorise(data.X));
+  data.observed_count = X.n_rows * data.group_size;
+  for (arma::uword index : data.missing)
+    --data.observed_count[data.noise_group[index / X.n_rows]];
   if (impute) data.X.elem(data.missing).zeros();
   Fit fit;
   if (method == "greedy" || method == "greedy+backfit") {

@@ -67,13 +67,21 @@ The numerical implementation uses SVD initialization, with finite noise
 initialization for exactly fitted aligned data before posterior moments are
 available. It preserves the original update order and covariance optimizer
 settings. Imputation uses the manuscript's missing-entry stopping criterion.
+Single-factor initializations use a leading-component iterative SVD when both
+matrix dimensions are at least 128; smaller and multi-factor initializations use
+dense SVD. The iterative solver checks convergence without changing R's RNG state.
 Residuals and objective summaries are maintained incrementally. Covariance
 geometry is reused, and subjects with identical irregular time-distance
 matrices share covariance decompositions. Numerical results can differ at
 floating-point precision from an R implementation.
 
-Imputation retains the original objective evaluated after replacing missing
-entries; this is not a separately derived observed-data objective.
+Imputation assigns independent Gaussian variational distributions to missing
+values, with fitted means and the current noise variance. Their entropy removes
+missing entries from the Gaussian normalization count in the ELBO. Noise variance
+is the total residual second moment divided by the number of observed entries;
+posterior signal uncertainty at missing entries is retained. Loading and score
+updates are unchanged. An aligned visit with no observations shares the
+observation-count-weighted mean variance of the observed visits, optimized jointly.
 }
 \value{
 A list containing \code{u} (loading factors), \code{v} (score factors),

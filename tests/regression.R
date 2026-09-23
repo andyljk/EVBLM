@@ -22,7 +22,9 @@ for (variant in c("aligned", "irregular")) {
         v_second = if (variant == "aligned") fit$v$pos[, , 2, , drop = FALSE] else
           lapply(fit$v$pos, function(v) v[, , 2, drop = FALSE]),
         elbo_steps = fit$elbo_steps)
-      for (field in names(expected)) {
+      # Imputation now uses Gaussian missing-value distributions and a different
+      # noise objective; validate that objective independently in imputation.R.
+      for (field in if (impute) character() else names(expected)) {
         comparison = all.equal(actual[[field]], expected[[field]], tolerance = 2e-5)
         if (!isTRUE(comparison)) {
           stop(name, " / ", field, ": ", paste(comparison, collapse = "; "))

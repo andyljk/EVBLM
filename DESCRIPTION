@@ -1,7 +1,7 @@
 Package: EVBLM
 Type: Package
 Title: Empirical Variational Bayes for Longitudinal Matrix Factorization
-Version: 0.0.2
+Version: 0.0.3
 Authors@R: person("EVBLM", "authors", role = c("aut", "cre"),
     email = "maintainer@example.org")
 Description: Fits longitudinal matrix factorization models with aligned or

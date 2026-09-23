@@ -6,6 +6,32 @@
 namespace evblm {
 namespace {
 
+// Apply the smaller Gram operator using two matrix-vector products. Neither
+// X'X nor XX' is formed; NEWARP supplies restarted Lanczos and a local RNG.
+struct SvdGramOperator {
+  const arma::mat& X;
+  const bool right;
+  const arma::uword n_rows, n_cols;
+  const double scale;
+  mutable arma::vec work;
+
+  SvdGramOperator(const arma::mat& matrix) : X(matrix), right(X.n_cols <= X.n_rows),
+    n_rows(std::min(X.n_rows, X.n_cols)), n_cols(n_rows), scale(arma::abs(X).max()) {}
+
+  void perform_op(double* input, double* output) const {
+    Rcpp::checkUserInterrupt();
+    const arma::vec x(input, n_rows, false, true);
+    arma::vec y(output, n_rows, false, true);
+    if (right) {
+      work = (X * x) / scale;
+      y = (X.t() * work) / scale;
+    } else {
+      work = (X.t() * x) / scale;
+      y = (X * work) / scale;
+    }
+  }
+};
+
 // optim requests fn and gr separately. Retain their shared evaluation at x.
 struct OptimContext {
   const Objective& objective;
@@ -191,8 +217,31 @@ Factors initialize_factors(const WorkingData& data, arma::uword rank) {
   }
   arma::mat u, v;
   arma::vec singular;
-  if (!arma::svd_econ(u, singular, v, unfolded, "both", "dc"))
+  if (rank == 1 && std::min(unfolded.n_rows, unfolded.n_cols) >= 128) {
+    SvdGramOperator op(unfolded);
+    if (op.scale == 0) return f;
+    arma::newarp::SymEigsSolver<double, arma::newarp::EigsSelect::LARGEST_ALGE, SvdGramOperator> solver(op, 1, 20);
+    solver.init();
+    if (solver.compute(1000, 1e-12) != 1)
+      Rcpp::stop("Leading-component SVD did not converge.");
+    singular.set_size(1);
+    if (op.right) {
+      v = solver.eigenvectors(1);
+      u = unfolded * v;
+      singular[0] = arma::norm(u.col(0));
+      u /= singular[0];
+    } else {
+      u = solver.eigenvectors(1);
+      v = unfolded.t() * u;
+      singular[0] = arma::norm(v.col(0));
+      v /= singular[0];
+    }
+    if (arma::norm(unfolded * v - singular[0] * u, "fro") > 1e-8 * singular[0] ||
+        arma::norm(unfolded.t() * u - singular[0] * v, "fro") > 1e-8 * singular[0])
+      Rcpp::stop("Leading-component SVD residual exceeds tolerance.");
+  } else if (!arma::svd_econ(u, singular, v, unfolded, "both", "dc")) {
     Rcpp::stop("Dense SVD initialization failed.");
+  }
   for (arma::uword k = 0; k < rank; ++k) {
     double scale = std::sqrt(singular[k]);
     f.U.col(k) = u.col(k) * scale;
@@ -282,12 +331,49 @@ void replace_score(const WorkingData& data, Factors& f, ResidualCache& cache,
   }
 }
 
+arma::vec pooled_noise_precision(const WorkingData& data, const ResidualCache& cache,
+                                const arma::vec& previous) {
+  const arma::uvec observed = arma::find(data.observed_count > 0);
+  const arma::uvec empty = arma::find(data.observed_count == 0);
+  const arma::vec counts = data.observed_count.elem(observed);
+  const arma::vec rss = cache.rss.elem(observed);
+  const double total = arma::accu(counts);
+  const arma::vec weights = counts / total;
+  const double missing_rss = arma::accu(cache.rss.elem(empty));
+  const double scale = arma::accu(cache.rss) / total;
+  // Unobserved visits share the observation-count-weighted mean variance.
+  // Optimize the observed variances jointly because that constraint couples
+  // their derivatives to the missing visits' posterior signal uncertainty.
+  Objective objective = [&](const arma::vec& log_variance) {
+    const arma::vec variance = arma::exp(log_variance);
+    const double pooled = arma::dot(weights, variance);
+    Evaluation value;
+    value.value = (arma::dot(counts, log_variance) +
+      arma::accu(rss / (scale * variance)) + missing_rss / (scale * pooled)) / (2 * total);
+    value.gradient = (counts - rss / (scale * variance) -
+      missing_rss / (scale * pooled * pooled) * weights % variance) / (2 * total);
+    return value;
+  };
+  const arma::vec initial = arma::log(1 / (previous.elem(observed) * scale));
+  const OptimResult optimum = optimize_lbfgsb(initial,
+    arma::vec(observed.n_elem, arma::fill::value(-arma::datum::inf)),
+    arma::vec(observed.n_elem, arma::fill::value(arma::datum::inf)), objective, 500, 100, 1e-8);
+  if (optimum.code != 0) Rcpp::stop("Pooled noise variance optimization did not converge.");
+  const arma::vec variance = scale * arma::exp(optimum.par);
+  arma::vec precision(data.observed_count.n_elem);
+  precision.elem(observed) = 1 / variance;
+  precision.elem(empty).fill(1 / arma::dot(weights, variance));
+  return precision;
+}
+
 double evidence_lower_bound(const WorkingData& data, const Factors& f,
                             const ResidualCache& cache, const arma::vec& tau) {
   if (f.u_count < f.rank || f.v_count < f.rank) return R_NegInf;
   double value = 0;
   for (arma::uword j = 0; j < tau.n_elem; ++j) {
-    value -= data.X.n_rows * data.group_size[j] / 2 * std::log(2 * arma::datum::pi / tau[j]);
+    // Profiling q(Y_missing)=N(fitted mean, 1/tau) cancels the missing
+    // Gaussian normalizers with its entropy. Signal uncertainty remains.
+    value -= data.observed_count[j] / 2 * std::log(2 * arma::datum::pi / tau[j]);
     value -= tau[j] / 2 * cache.rss[j];
   }
   return value + arma::accu(f.u_kl.head(f.rank)) + arma::accu(f.v_kl.head(f.rank));

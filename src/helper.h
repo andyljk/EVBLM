@@ -76,6 +76,7 @@ struct WorkingData {
   arma::uvec offsets;
   arma::uvec noise_group;
   arma::vec group_size;
+  arma::vec observed_count;
   arma::uvec missing;
   Geometry geometry;
   bool aligned;
@@ -103,6 +104,8 @@ struct ResidualCache {
 Factors empty_factors(arma::uword variables, arma::uword visits, arma::uword capacity);
 Factors initialize_factors(const WorkingData& data, arma::uword rank);
 ResidualCache initialize_residual(const WorkingData& data, const Factors& factors);
+arma::vec pooled_noise_precision(const WorkingData& data, const ResidualCache& cache,
+                                const arma::vec& previous);
 void replace_loading(const WorkingData& data, Factors& factors, ResidualCache& cache,
                      arma::uword k, const PriorResult& update);
 void replace_score(const WorkingData& data, Factors& factors, ResidualCache& cache,
