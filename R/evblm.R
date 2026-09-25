@@ -4,7 +4,20 @@ evblm = function(X, D, R = NULL, fn = "EC",
                  method = if (is.null(R)) "greedy+backfit" else "backfit",
                  impute = FALSE, thres = 1e-8, max_iter = 50,
                  verbose = FALSE, null_check = TRUE,
-                 u_mt = NULL, v_mt = NULL, D_init = NULL) {
+                 u_mt = NULL, v_mt = NULL, D_init = NULL,
+                 loading_prior = "normal") {
+  loading_prior = match.arg(loading_prior,
+    c("normal", "point_normal", "point_laplace", "normal_scale_mixture"))
+  loading_solver = NULL
+  if (loading_prior != "normal") {
+    if (!requireNamespace("ebnm", quietly = TRUE)) {
+      stop("Non-normal loading priors require the 'ebnm' package.")
+    }
+    loading_solver = function(x, s, g_init) ebnm::ebnm(as.numeric(x), s,
+      prior_family = loading_prior,
+      g_init = if (loading_prior == "normal_scale_mixture") g_init else NULL,
+      output = c("posterior_mean", "posterior_second_moment", "fitted_g", "log_likelihood"))
+  }
   aligned = is.array(X) && length(dim(X)) == 3L
   if (aligned) {
     if (!is.numeric(X) || any(dim(X) == 0L)) {
@@ -122,10 +135,23 @@ evblm = function(X, D, R = NULL, fn = "EC",
     if (length(initial_u$neg_KL) != length(initial_v$neg_KL)) {
       stop("Loading and score initializations must both provide complete likelihood and KL metadata, or neither.")
     }
+    initial_prior = if (is.null(u_mt$prior)) "normal" else u_mt$prior
+    if (length(initial_u$neg_KL) && !identical(initial_prior, loading_prior)) {
+      stop("Initial loading prior must match loading_prior when likelihood and KL metadata are supplied.")
+    }
     for (par in initial_u$par) {
-      if (!is.null(par) && (!is.numeric(par) || length(par) != 2L ||
-                            any(!is.finite(par)) || par[2L] < 0)) {
-        stop("Each loading parameter must contain a finite mean and nonnegative finite standard deviation.")
+      if (is.null(par)) next
+      if (loading_prior == "normal") {
+        if (!is.numeric(par) || length(par) != 2L || any(!is.finite(par)) || par[2L] < 0) {
+          stop("Each loading parameter must contain a finite mean and nonnegative finite standard deviation.")
+        }
+      } else if (!inherits(par, switch(loading_prior,
+        point_normal = "normalmix", point_laplace = "laplacemix",
+        normal_scale_mixture = "normalmix"))) {
+        stop("Each loading parameter must be an ebnm fitted prior matching loading_prior.")
+      }
+      if (loading_prior == "normal_scale_mixture" && any(par$mean != 0)) {
+        stop("Initial normal scale mixtures must be centered at zero.")
       }
     }
     for (par in initial_v$par) {
@@ -167,7 +193,8 @@ evblm = function(X, D, R = NULL, fn = "EC",
   }
   fit = evblm_engine_cpp(packed, schedules, aligned, subjects, fn, method,
     if (is.null(R)) 0L else as.integer(R), impute, thres, as.integer(max_iter),
-    verbose, null_check, initial_u, initial_v)
+    verbose, null_check, initial_u, initial_v, loading_solver)
+  fit$u$prior = loading_prior
 
   rank = ncol(fit$u$mean)
   fit$u$pos = array(c(fit$u$mean, fit$u$second), c(variables, rank, 2L))
@@ -200,10 +227,11 @@ evblm = function(X, D, R = NULL, fn = "EC",
 evblm_impute = function(X, D, R = NULL, fn = "EC",
                         method = if (is.null(R)) "greedy+backfit" else "backfit",
                         thres = 1e-5, max_iter = 100, verbose = FALSE,
-                        null_check = TRUE, D_init = NULL) {
+                        null_check = TRUE, D_init = NULL,
+                        loading_prior = "normal") {
   evblm(X, D, R = R, fn = fn, method = method, impute = TRUE,
     thres = thres, max_iter = max_iter, verbose = verbose,
-    null_check = null_check, D_init = D_init)
+    null_check = null_check, D_init = D_init, loading_prior = loading_prior)
 }
 
 mvEBNM = function(X, s, D, fn = c("EC", "Free", "RBF"), par_init = NULL) {

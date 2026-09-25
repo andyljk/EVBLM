@@ -6,19 +6,20 @@
 Estimate variable loadings and subject scores from aligned or irregular
 longitudinal data. The R interface validates and formats inputs and outputs;
 initialization, covariance fitting, coordinate updates, factor selection,
-objective tracking, and imputation run in C++.
+objective tracking, and imputation run in C++. Optional non-normal loading
+updates call \pkg{ebnm} from the fitting loop.
 }
 \usage{
 evblm(X, D, R = NULL, fn = "EC",
   method = if (is.null(R)) "greedy+backfit" else "backfit",
   impute = FALSE, thres = 1e-8, max_iter = 50,
   verbose = FALSE, null_check = TRUE,
-  u_mt = NULL, v_mt = NULL, D_init = NULL)
+  u_mt = NULL, v_mt = NULL, D_init = NULL, loading_prior = "normal")
 
 evblm_impute(X, D, R = NULL, fn = "EC",
   method = if (is.null(R)) "greedy+backfit" else "backfit",
   thres = 1e-5, max_iter = 100, verbose = FALSE,
-  null_check = TRUE, D_init = NULL)
+  null_check = TRUE, D_init = NULL, loading_prior = "normal")
 }
 \arguments{
   \item{X}{Aligned data: a numeric array with dimensions variables by subjects
@@ -57,8 +58,25 @@ evblm_impute(X, D, R = NULL, fn = "EC",
   \item{D_init}{Optional irregular initialization schedules, retained for
   compatibility. They must have the same subject and visit counts as \code{D}.
   Initialization uses their block sizes, not alternate visit times.}
+  \item{loading_prior}{Loading prior family: \code{"normal"} (the default),
+  \code{"point_normal"}, \code{"point_laplace"},
+  or \code{"normal_scale_mixture"}. All are centered
+  at zero, with a separate prior estimated for each factor. Non-normal
+  options require \pkg{ebnm}.}
 }
 \details{
+Loading updates retain posterior means and second moments for every prior.
+Spike-and-slab priors therefore do not generally produce exact zeros in the
+posterior means. The default normal update retains the native closed-form
+implementation. Other families use \code{ebnm::ebnm()} and its default
+optimization settings, without an additional penalty on the prior.
+For normal scale mixtures, the first update chooses the scale grid and later
+updates estimate its weights using the previous fitted prior as a warm start.
+Retaining the grid keeps the previous prior available to the next optimization.
+
+If all score second moments vanish, the existing
+zero-factor boundary is retained for all loading priors.
+
 The aligned exchangeable model allows negative correlations within its
 positive-semidefinite parameter space. The irregular exchangeable model has
 nonnegative independent and random-intercept variance components.
@@ -96,6 +114,12 @@ not the variance. Loading moments have dimensions variables by factors by
 two. Aligned score moments have dimensions subjects by factors by two by
 visits. Irregular score moments are a list of factors by visits by two arrays.
 Irregular score factors additionally retain covariance optimization diagnostics.
+The loading list also records \code{prior}. Its \code{par} entries are
+mean/standard-deviation vectors for normal loadings, or \pkg{ebnm}
+\code{fitted_g} objects for other priors. A non-normal factor collapsed at
+zero score precision has \code{par = NULL}. Warm starts with likelihood and
+KL metadata must use the same loading prior; older fits without a
+\code{prior} field are treated as normal.
 
 Except for the greedy-only method, \code{elbo_steps} records the initial
 objective and each noise, loading, score, and, when relevant, imputation update.
@@ -105,6 +129,11 @@ set.seed(1)
 x = array(rnorm(12 * 5 * 3), c(12, 5, 3))
 fit = evblm(x, D = c(0, 1, 3), R = 1, max_iter = 2)
 dim(fit$S)
+
+if (requireNamespace("ebnm", quietly = TRUE)) {
+  sparse_fit = evblm(x, D = c(0, 1, 3), R = 1, max_iter = 2,
+    loading_prior = "point_normal")
+}
 
 times = list(c(0, 1), c(0, 2, 4), c(1, 3))
 x_irregular = lapply(times, function(d) matrix(rnorm(12 * length(d)), 12))

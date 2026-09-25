@@ -44,7 +44,7 @@ struct Fit {
 
 Fit iterate(WorkingData data, Factors factors, const std::string& prior,
             bool impute, double threshold, int max_iter, bool verbose,
-            bool single) {
+            bool single, const Rcpp::Nullable<Rcpp::Function>& loading_solver) {
   Fit fit;
   fit.factors = std::move(factors);
   Factors& f = fit.factors;
@@ -105,7 +105,25 @@ Fit iterate(WorkingData data, Factors factors, const std::string& prior,
         pseudo_u = (cache.residual * weighted_scores +
           f.U.col(k) * arma::dot(f.V.col(k), weighted_scores)) / precision;
       }
-      PriorResult loading = gaussian_update(pseudo_u, std::pow(precision, -0.5));
+      double loading_se = std::pow(precision, -0.5);
+      PriorResult loading;
+      if (loading_solver.isNull() || precision == 0) {
+        loading = gaussian_update(pseudo_u, loading_se);
+        // Preserve the existing zero-factor boundary when scores vanish.
+        if (loading_solver.isNotNull()) loading.par = R_NilValue;
+      } else {
+        Rcpp::Function solve(loading_solver.get());
+        Rcpp::List result = solve(pseudo_u, loading_se, f.u_par[k]);
+        Rcpp::List posterior = result["posterior"];
+        loading.mean = Rcpp::as<arma::vec>(posterior["mean"]);
+        loading.second = Rcpp::as<arma::vec>(posterior["second_moment"]);
+        loading.par = result["fitted_g"];
+        loading.loglik = Rcpp::as<double>(result["log_likelihood"]);
+        loading.neg_kl = loading.loglik + 0.5 *
+          (pseudo_u.n_elem * std::log(2 * arma::datum::pi / precision) +
+           precision * arma::accu(arma::square(pseudo_u - loading.mean) +
+             loading.second - arma::square(loading.mean)));
+      }
       replace_loading(data, f, cache, k, loading);
       fit.trace.append(iteration, "u", k + 1, evidence_lower_bound(data, f, cache, fit.tau));
 
@@ -166,7 +184,8 @@ Fit iterate(WorkingData data, Factors factors, const std::string& prior,
   return fit;
 }
 
-Fit greedy(const WorkingData& data, const std::string& prior, double threshold) {
+Fit greedy(const WorkingData& data, const std::string& prior, double threshold,
+           const Rcpp::Nullable<Rcpp::Function>& loading_solver) {
   Fit fit;
   arma::uword capacity = std::min(data.X.n_rows, data.aligned ? data.subjects : data.X.n_cols);
   fit.factors = empty_factors(data.X.n_rows, data.X.n_cols, capacity);
@@ -185,7 +204,7 @@ Fit greedy(const WorkingData& data, const std::string& prior, double threshold) 
     residual_data.X = cache.residual;
     residual_data.missing.reset();
     Fit candidate = iterate(residual_data, initialize_factors(residual_data, 1),
-                             prior, false, threshold, 50, false, true);
+                             prior, false, threshold, 50, false, true, loading_solver);
     if (arma::all(arma::vectorise(candidate.factors.U2) == 0) ||
         arma::all(arma::vectorise(candidate.factors.V2) == 0)) break;
     arma::uword k = f.rank++;
@@ -297,7 +316,8 @@ Rcpp::List evblm_engine_cpp(const arma::mat& X, const Rcpp::List& D, bool aligne
                             int rank, bool impute, double thres, int max_iter,
                             bool verbose, bool null_check,
                             Rcpp::Nullable<Rcpp::List> initial_u = R_NilValue,
-                            Rcpp::Nullable<Rcpp::List> initial_v = R_NilValue) {
+                            Rcpp::Nullable<Rcpp::List> initial_v = R_NilValue,
+                            Rcpp::Nullable<Rcpp::Function> loading_solver = R_NilValue) {
   using namespace evblm;
   WorkingData data;
   data.X = X;
@@ -326,9 +346,9 @@ Rcpp::List evblm_engine_cpp(const arma::mat& X, const Rcpp::List& D, bool aligne
   if (impute) data.X.elem(data.missing).zeros();
   Fit fit;
   if (method == "greedy" || method == "greedy+backfit") {
-    fit = greedy(data, prior, thres);
+    fit = greedy(data, prior, thres, loading_solver);
     if (method == "greedy+backfit")
-      fit = iterate(data, std::move(fit.factors), prior, impute, thres, max_iter, verbose, false);
+      fit = iterate(data, std::move(fit.factors), prior, impute, thres, max_iter, verbose, false, loading_solver);
   } else {
     Factors factors;
     if (initial_u.isNotNull() && initial_v.isNotNull()) {
@@ -370,7 +390,7 @@ Rcpp::List evblm_engine_cpp(const arma::mat& X, const Rcpp::List& D, bool aligne
     } else {
       factors = initialize_factors(data, method == "single" ? 1 : rank);
     }
-    fit = iterate(data, std::move(factors), prior, impute, thres, max_iter, verbose, method == "single");
+    fit = iterate(data, std::move(factors), prior, impute, thres, max_iter, verbose, method == "single", loading_solver);
   }
   if (null_check && method != "single" && method != "greedy") remove_null_factors(data, fit.factors);
   return output_fit(fit, aligned, method == "greedy");

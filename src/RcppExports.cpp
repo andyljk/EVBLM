@@ -42,8 +42,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // evblm_engine_cpp
-Rcpp::List evblm_engine_cpp(const arma::mat& X, const Rcpp::List& D, bool aligned, int subjects, const std::string& prior, const std::string& method, int rank, bool impute, double thres, int max_iter, bool verbose, bool null_check, Rcpp::Nullable<Rcpp::List> initial_u, Rcpp::Nullable<Rcpp::List> initial_v);
-RcppExport SEXP _EVBLM_evblm_engine_cpp(SEXP XSEXP, SEXP DSEXP, SEXP alignedSEXP, SEXP subjectsSEXP, SEXP priorSEXP, SEXP methodSEXP, SEXP rankSEXP, SEXP imputeSEXP, SEXP thresSEXP, SEXP max_iterSEXP, SEXP verboseSEXP, SEXP null_checkSEXP, SEXP initial_uSEXP, SEXP initial_vSEXP) {
+Rcpp::List evblm_engine_cpp(const arma::mat& X, const Rcpp::List& D, bool aligned, int subjects, const std::string& prior, const std::string& method, int rank, bool impute, double thres, int max_iter, bool verbose, bool null_check, Rcpp::Nullable<Rcpp::List> initial_u, Rcpp::Nullable<Rcpp::List> initial_v, Rcpp::Nullable<Rcpp::Function> loading_solver);
+RcppExport SEXP _EVBLM_evblm_engine_cpp(SEXP XSEXP, SEXP DSEXP, SEXP alignedSEXP, SEXP subjectsSEXP, SEXP priorSEXP, SEXP methodSEXP, SEXP rankSEXP, SEXP imputeSEXP, SEXP thresSEXP, SEXP max_iterSEXP, SEXP verboseSEXP, SEXP null_checkSEXP, SEXP initial_uSEXP, SEXP initial_vSEXP, SEXP loading_solverSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -61,7 +61,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type null_check(null_checkSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type initial_u(initial_uSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type initial_v(initial_vSEXP);
-    rcpp_result_gen = Rcpp::wrap(evblm_engine_cpp(X, D, aligned, subjects, prior, method, rank, impute, thres, max_iter, verbose, null_check, initial_u, initial_v));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::Function> >::type loading_solver(loading_solverSEXP);
+    rcpp_result_gen = Rcpp::wrap(evblm_engine_cpp(X, D, aligned, subjects, prior, method, rank, impute, thres, max_iter, verbose, null_check, initial_u, initial_v, loading_solver));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -69,7 +70,7 @@ END_RCPP
 static const R_CallMethodDef CallEntries[] = {
     {"_EVBLM_mv_ebnm_cpp", (DL_FUNC) &_EVBLM_mv_ebnm_cpp, 5},
     {"_EVBLM_irr_ebnm_cpp", (DL_FUNC) &_EVBLM_irr_ebnm_cpp, 5},
-    {"_EVBLM_evblm_engine_cpp", (DL_FUNC) &_EVBLM_evblm_engine_cpp, 14},
+    {"_EVBLM_evblm_engine_cpp", (DL_FUNC) &_EVBLM_evblm_engine_cpp, 15},
     {NULL, NULL, 0}
 };
 

@@ -9,7 +9,7 @@ irr_ebnm_cpp <- function(X, s, D, prior, par_init = NULL) {
     .Call(`_EVBLM_irr_ebnm_cpp`, X, s, D, prior, par_init)
 }
 
-evblm_engine_cpp <- function(X, D, aligned, subjects, prior, method, rank, impute, thres, max_iter, verbose, null_check, initial_u = NULL, initial_v = NULL) {
-    .Call(`_EVBLM_evblm_engine_cpp`, X, D, aligned, subjects, prior, method, rank, impute, thres, max_iter, verbose, null_check, initial_u, initial_v)
+evblm_engine_cpp <- function(X, D, aligned, subjects, prior, method, rank, impute, thres, max_iter, verbose, null_check, initial_u = NULL, initial_v = NULL, loading_solver = NULL) {
+    .Call(`_EVBLM_evblm_engine_cpp`, X, D, aligned, subjects, prior, method, rank, impute, thres, max_iter, verbose, null_check, initial_u, initial_v, loading_solver)
 }
 

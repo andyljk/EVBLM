@@ -20,12 +20,30 @@ fit = evblm(X, D, fn = "RBF", method = "greedy+backfit")
 
 # Missing entries are marked NA.
 fit = evblm_impute(X, D, R = 3, fn = "RBF")
+
+# Estimate a sparse prior for each loading vector (requires ebnm).
+fit = evblm(X, D, R = 3, fn = "RBF", loading_prior = "point_normal")
 ```
 
 `fn = "Free"` is also available for aligned data. `method = "single"` fits one
 factor; `method = "greedy"` returns greedy estimation without backfitting.
 `mvEBNM()` and `irrEBNM()` expose the covariance updates for direct inspection.
 See `?evblm` and `?mvEBNM` for arguments and returned moment arrays.
+
+`loading_prior` is available in both `evblm()` and `evblm_impute()`. Choices
+are `"normal"` (the default), `"point_normal"`, `"point_laplace"`,
+and `"normal_scale_mixture"`. All priors are centered at zero
+and estimated separately for each loading vector. Fits continue to use posterior
+means and second moments, so sparse priors do not generally yield exact-zero
+loading estimates. `fit$u$prior` records the family, and `fit$u$par` stores the
+Gaussian parameter vectors or the `ebnm` fitted-prior objects. Warm starts with
+likelihood and KL metadata must use the same loading prior.
+Normal scale mixtures retain each factor's initial scale grid and re-estimate
+its weights at subsequent updates, so changing the grid cannot lower the ELBO.
+
+The three new options require `ebnm`. The existing
+zero-factor boundary is retained when score second moments vanish; in that case
+a non-normal factor's stored prior is `NULL`.
 
 ## Source organization
 
@@ -38,7 +56,8 @@ See `?evblm` and `?mvEBNM` for arguments and returned moment arrays.
 - `R/evblm.R`: validation and conversion between public arrays/lists and native matrices.
 - `tests/regression.R`: portable comparisons against fixtures from the original R code.
 
-All numerical fitting, including optimizer iterations, runs in C++. The optimizer
+Normal-loading fits run entirely in C++; other loading priors call `ebnm` in R
+once per factor update. The covariance optimizer
 is R's native L-BFGS-B routine, called directly without R function callbacks.
 Single-factor initialization (including greedy proposals) uses restarted Lanczos
 when both matrix dimensions are at least 128. It applies matrix-vector products
